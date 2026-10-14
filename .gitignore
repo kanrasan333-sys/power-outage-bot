@@ -1,0 +1,13 @@
+# Личные настройки: токен Telegram и пароль SmartESS
+config.json
+
+# Рабочие файлы бота
+power_state.json
+*.tmp
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

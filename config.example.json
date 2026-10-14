@@ -1,0 +1,13 @@
+{
+  "telegram_token": "",
+  "telegram_chat_id": 0,
+  "dess_user": "",
+  "dess_password": "",
+  "dess_company_key": "VRZXQzNDGM4jkwOo",
+  "device_pn": "",
+  "grid_voltage_field": "",
+  "grid_min_volts": 50,
+  "poll_seconds": 60,
+  "stale_minutes": 20,
+  "listen_commands": true
+}
