@@ -1,7 +1,7 @@
-# Личные настройки: токен Telegram и пароль SmartESS
+# Personal settings: Telegram token and SmartESS password
 config.json
 
-# Рабочие файлы бота
+# Bot's working files
 power_state.json
 *.tmp
 *.log

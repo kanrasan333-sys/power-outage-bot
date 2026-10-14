@@ -1,13 +1,12 @@
-"""Клиент облака dessmonitor (Eybond).
+"""Client for the dessmonitor (Eybond) cloud.
 
-Туда отправляют данные WiFi-модули Eybond, которые стоят во многих гибридных
-инверторах (Anenji, EASUN, PowMr, MUST и другие); смотрят их в приложениях
-SmartESS и DESS Monitor.
+Eybond WiFi modules, found in many hybrid inverters (Anenji, EASUN, PowMr, MUST and others),
+push their data there; people watch it in the SmartESS and DESS Monitor apps.
 
-Подпись запросов — по публичной документации API:
-    вход:       sign = SHA1(salt + SHA1(пароль) + query)
-    остальное:  sign = SHA1(salt + secret + token + query)
-Строка query должна уходить в URL байт в байт, поэтому параметры не URL-кодируются.
+Request signing follows the public API docs:
+    login:      sign = SHA1(salt + SHA1(password) + query)
+    the rest:   sign = SHA1(salt + secret + token + query)
+The query string must go into the URL byte for byte, so parameters are not URL-encoded.
 """
 import hashlib
 import time
@@ -15,29 +14,30 @@ import time
 import requests
 
 API_URL = "https://api.dessmonitor.com/public/"
-# Ключ веб-клиента dessmonitor.com: подходит для аккаунтов SmartESS / DESS Monitor
+# Company key of the dessmonitor.com web client: works for SmartESS / DESS Monitor accounts
 DEFAULT_COMPANY_KEY = "VRZXQzNDGM4jkwOo"
 APP_SUFFIX = "&_app_client_=web&_app_id_=dessmonitor.com&_app_version_=3.0"
-TOKEN_ERRORS = {4, 5, 6, 10007, 10008}  # токен протух или отозван — нужно войти заново
+TOKEN_ERRORS = {4, 5, 6, 10007, 10008}  # token expired or revoked — log in again
 
-# По этим словам узнаём напряжение на входе от сети. Названия зависят от прошивки.
+# Words that identify the grid input voltage. Names depend on the firmware.
 GRID_HINTS = ("grid", "mains", "utility", "ac input", "line")
-# А эти слова значат, что параметр точно не про вход от сети
+# Words that mean the parameter is definitely not the grid input
 NOT_GRID_HINTS = ("pv", "solar", "batt", "output", "load", "inv", "bus",
                   "frequency", "power", "current", "charg")
 
 
 class CloudRejected(Exception):
-    """Облако ответило, но отказало: неверный логин, ключ, токен и т.п."""
+    """The cloud answered but refused: wrong login, key, token and so on."""
 
     def __init__(self, code, desc):
-        super().__init__(f"облако отказало (код {code}): {desc}" if desc else f"облако отказало (код {code})")
+        # the bot builds the human text in the chosen language; here it's only the cloud's code and description
+        super().__init__(f"code {code}: {desc}" if desc else f"code {code}")
         self.code = code
         self.desc = desc
 
 
 class LoginRejected(CloudRejected):
-    """Облако не пустило по логину и паролю — повторять сразу бессмысленно и опасно блокировкой."""
+    """The cloud refused the login and password — retrying right away is pointless and risks a lockout."""
 
 
 def _sha1(text):
@@ -56,7 +56,7 @@ class Client:
         self._expires = 0.0
 
     def _get(self, url):
-        # URL нигде не логируем: в нём токен
+        # never log the URL: it contains the token
         resp = self._http.get(url, timeout=self._timeout)
         resp.raise_for_status()
         data = resp.json()
@@ -74,9 +74,9 @@ class Client:
         except CloudRejected as e:
             raise LoginRejected(e.code, e.desc) from None
         if not dat.get("token") or not dat.get("secret"):
-            raise LoginRejected(-1, "в ответе нет токена")
+            raise LoginRejected(-1, "no token in response")
         self._token, self._secret = dat["token"], dat["secret"]
-        # токен живёт неделю; обновляем за сутки до конца, чтобы не ловить протухание в бою
+        # the token lives a week; refresh a day early so it never expires mid-flight
         self._expires = time.time() + max(int(dat.get("expire", 604800)) - 86400, 3600)
 
     def _call_once(self, action, params):
@@ -93,7 +93,7 @@ class Client:
         except CloudRejected as e:
             if e.code not in TOKEN_ERRORS:
                 raise
-            self.login()  # токен отозвали раньше срока — один повтор с новым
+            self.login()  # the token was revoked early — one retry with a fresh one
             return self._call_once(action, params)
 
     def devices(self):
@@ -106,9 +106,9 @@ class Client:
                          sn=device.get("sn", ""))
 
 
-# ─── Разбор ответа ────────────────────────────────────────────
+# ─── Parsing the response ─────────────────────────────────────
 def parameters(dat):
-    """Плоский список параметров [{id, par, val, unit}, ...]. В ответе они лежат группами на разной глубине."""
+    """Flat list of parameters [{id, par, val, unit}, ...]. In the response they sit in groups at varying depth."""
     found = []
 
     def walk(node):
@@ -138,9 +138,9 @@ def _key(param):
 
 
 def find_grid_voltage(params, field=""):
-    """(напряжение, название параметра) или (None, "").
+    """(voltage, parameter name) or (None, "").
 
-    field — явное имя или id параметра из конфига; без него ищем по словам-подсказкам.
+    field is an explicit parameter name or id from the config; without it we search by hint words.
     """
     for param in params:
         key = _key(param)
@@ -159,7 +159,7 @@ def find_grid_voltage(params, field=""):
 
 
 def find_value(params, *names):
-    """Первое числовое значение параметра, чьё название совпадает с одним из names (без учёта регистра)."""
+    """First numeric value of a parameter whose name matches one of names (case-insensitive)."""
     wanted = {n.lower() for n in names}
     for param in params:
         if str(param.get("par", "")).strip().lower() in wanted:
